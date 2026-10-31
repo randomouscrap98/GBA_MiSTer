@@ -265,7 +265,7 @@ begin
       hdmode2x_bg        => '0',
       hdmode2x_obj       => '0',
       specialmodule      => '1',
-      solar_in           => "000",
+      solar_in           => x"E8",
       tilt               => '0',
       rewind_on          => GBA_Rewind_on(GBA_Rewind_on'left),
       rewind_active      => GBA_Rewind_active(GBA_Rewind_active'left),

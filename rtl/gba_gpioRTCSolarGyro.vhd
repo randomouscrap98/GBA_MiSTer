@@ -33,7 +33,7 @@ entity gba_gpioRTCSolarGyro is
    
       rumble               : out    std_logic := '0';
       AnalogX              : in     signed(7 downto 0);
-      solar_in             : in     std_logic_vector(2 downto 0)
+      solar_in             : in     std_logic_vector(7 downto 0)  -- raw sensor sample, lower = brighter
    );
 end entity;
 
@@ -138,17 +138,7 @@ begin
          end if;
          
          -- precalc for timing purpose
-         case (solar_in) is
-            when "000" => solarsensor <= x"FA";
-            when "001" => solarsensor <= x"F0";
-            when "010" => solarsensor <= x"E9";
-            when "011" => solarsensor <= x"D5";
-            when "100" => solarsensor <= x"B4";
-            when "101" => solarsensor <= x"A7";
-            when "110" => solarsensor <= x"75";
-            when "111" => solarsensor <= x"44";
-            when others => null;
-         end case;
+         solarsensor <= unsigned(solar_in);
          
          if (AnalogX < -110) then -- maximum = shock speed
             gyrosensor <= to_unsigned(GYRO_MIN, 16);

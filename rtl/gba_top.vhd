@@ -44,7 +44,7 @@ entity gba_top is
       hdmode2x_bg           : in     std_logic;
       hdmode2x_obj          : in     std_logic;
       specialmodule         : in     std_logic;                    -- 0 = off, 1 = use gamepak GPIO Port at address 0x080000C4..0x080000C8
-      solar_in              : in     std_logic_vector(2 downto 0);
+      solar_in              : in     std_logic_vector(7 downto 0);
       tilt                  : in     std_logic;                    -- 0 = off, 1 = use tilt at address 0x0E008200, 0x0E008300, 0x0E008400, 0x0E008500
       rewind_on             : in     std_logic;
       rewind_active         : in     std_logic;

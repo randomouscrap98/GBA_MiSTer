@@ -112,7 +112,8 @@ parameter CONF_STR = {
 
 	"P2,Hardware;",
 	"P2-;",
-	"H6P2O[31:29],Solar Sensor,0%,15%,30%,42%,55%,70%,85%,100%;",
+	"H6P2O[47:44],Solar Sensor,0 bars,1 bar,2 bars,3 bars,4 bars,5 bars,6 bars,7 bars,8 bars;",
+	"H7P2O[47:44],Solar Sensor,0 bars,1 bar,2 bars,3 bars,4 bars,5 bars,6 bars,7 bars,8 bars,9 bars,10 bars;",
 	"H2P2O[16],Turbo,Off,On;",
 	"P2O[28],Homebrew BIOS(Reset!),Off,On;",
 
@@ -128,7 +129,7 @@ parameter CONF_STR = {
 
 	"- ;",
 	"R0,Reset;",
-	"J1,A,B,L,R,Select,Start,FastForward,Rewind,Savestates;",
+	"J1,A,B,L,R,Select,Start,FastForward,Rewind,Savestates,Solar+,Solar-;",
 	"jn,A,B,L,R,Select,Start,X,X;",
 	"I,",
 	"Load=DPAD Up|Save=Down|Slot=L+R,",
@@ -150,7 +151,7 @@ parameter CONF_STR = {
 
 wire  [1:0] buttons;
 wire [63:0] status;
-wire [15:0] status_menumask = {~solar_quirk, status[27], cart_loaded, |cart_type, force_turbo, ~gg_active, ~bk_ena};
+wire [15:0] status_menumask = {~solar10_quirk, ~(solar_quirk & ~solar10_quirk), status[27], cart_loaded, |cart_type, force_turbo, ~gg_active, ~bk_ena};
 wire        forced_scandoubler;
 reg  [31:0] sd_lba;
 reg         sd_rd = 0;
@@ -182,7 +183,8 @@ wire [15:0] joystick_analog_0;
 
 wire [32:0] RTC_time;
 
-wire [63:0] status_in = cart_download ? {status[63:39],ss_slot,status[36:19],3'b000,status[15:0]} : {status[63:39],ss_slot,status[36:19],2'b00,status[16:0]};
+wire [3:0] solar_status = solar_update ? solar_new : status[47:44];
+wire [63:0] status_in = cart_download ? {status[63:48],solar_status,status[43:39],ss_slot,status[36:19],3'b000,status[15:0]} : {status[63:48],solar_status,status[43:39],ss_slot,status[36:19],2'b00,status[16:0]};
 
 hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 (
@@ -198,7 +200,7 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 
 	.status(status),
 	.status_in(status_in),
-	.status_set(cart_download | statusUpdate),
+	.status_set(cart_download | statusUpdate | solar_update),
 	.status_menumask(status_menumask),
 	.info_req(ss_info_req),
 	.info(ss_info),
@@ -406,7 +408,7 @@ gba
    .hdmode2x_obj(status[22]),
    .shade_mode(shadercolors),
 	.specialmodule(gpio_quirk | status[40]),
-	.solar_in(status[31:29]),
+	.solar_in(solar_sample),
 	.tilt(tilt_quirk),
    .rewind_on(status[27]),
    .rewind_active(status[27] & joy[11]),
@@ -490,6 +492,61 @@ gba
 assign AUDIO_L = (fast_forward && status[19]) ? 16'd0 : GBA_AUDIO_L;
 assign AUDIO_R = (fast_forward && status[19]) ? 16'd0 : GBA_AUDIO_R;
 
+////////////////////////////  SOLAR  ///////////////////////////////////
+// Solar sensor level in gauge bars (Boktai 1: 0-8, Boktai 2/3: 0-10), stored in status[47:44].
+// Solar+/Solar- buttons step it by one bar and write it back to the OSD.
+// Samples: 0 bars = E8 (calibrate in-game here), others = E7 - middle of the bar's level range.
+// See ignore/claude/notes/gba-solar-sensor.md in the workspace.
+
+wire [3:0] solar_max  = solar10_quirk ? 4'd10 : 4'd8;
+wire [3:0] solar_bars = (status[47:44] > solar_max) ? solar_max : status[47:44];
+reg  [3:0] solar_new;
+reg        solar_update = 0;
+reg  [7:0] solar_sample;
+always @(posedge clk_sys) begin
+	reg old_up, old_down;
+
+	old_up   <= joy[13];
+	old_down <= joy[14];
+	solar_update <= 0;
+	if (solar_quirk && joy[13] && !old_up && solar_bars < solar_max) begin
+		solar_new    <= solar_bars + 1'd1;
+		solar_update <= 1;
+	end
+	if (solar_quirk && joy[14] && !old_down && solar_bars > 0) begin
+		solar_new    <= solar_bars - 1'd1;
+		solar_update <= 1;
+	end
+
+	if (solar10_quirk) begin
+		case (solar_bars)
+			 0: solar_sample <= 8'hE8;
+			 1: solar_sample <= 8'hE4;
+			 2: solar_sample <= 8'hDE;
+			 3: solar_sample <= 8'hD5;
+			 4: solar_sample <= 8'hCA;
+			 5: solar_sample <= 8'hBD;
+			 6: solar_sample <= 8'hAD;
+			 7: solar_sample <= 8'h9A;
+			 8: solar_sample <= 8'h85;
+			 9: solar_sample <= 8'h6A;
+			default: solar_sample <= 8'h42;
+		endcase
+	end else begin
+		case (solar_bars)
+			 0: solar_sample <= 8'hE8;
+			 1: solar_sample <= 8'hE3;
+			 2: solar_sample <= 8'hDD;
+			 3: solar_sample <= 8'hD3;
+			 4: solar_sample <= 8'hC7;
+			 5: solar_sample <= 8'hB5;
+			 6: solar_sample <= 8'h95;
+			 7: solar_sample <= 8'h70;
+			default: solar_sample <= 8'h42;
+		endcase
+	end
+end
+
 ////////////////////////////  QUIRKS  //////////////////////////////////
 
 reg sram_quirk = 0;            // game tries to use SRAM as emulation detection. This bit forces to pretent we have no SRAM
@@ -497,6 +554,7 @@ reg memory_remap_quirk = 0;    // game uses memory mirroring, e.g. access 4Mbyte
 reg gpio_quirk = 0;            // game exchanges some addresses to be GPIO lines for e.g. Solar or RTC
 reg tilt_quirk = 0;            // game exchanges some addresses to be Tilt module
 reg solar_quirk = 0;           // game has solar module
+reg solar10_quirk = 0;         // solar gauge has 10 bars (Boktai 2/3) instead of 8 (Boktai 1)
 reg sprite_quirk = 0;          // game depends on using max sprite pixels per line, otherwise glitches appear
 always @(posedge clk_sys) begin
 	reg [31:0] cart_id;
@@ -507,6 +565,7 @@ always @(posedge clk_sys) begin
       gpio_quirk         <= 0;
       tilt_quirk         <= 0;
       solar_quirk        <= 0;
+      solar10_quirk      <= 0;
       sprite_quirk       <= 0;
    end
 
@@ -539,8 +598,8 @@ always @(posedge clk_sys) begin
 			if(cart_id[31:8] == "KHP" ) begin tilt_quirk <= 1;                                             end // Koro Koro Puzzle JP
 			if(cart_id[31:8] == "KYG" ) begin tilt_quirk <= 1;                                             end // Yoshi's Topsy-Turvy
 			if(cart_id[31:8] == "U3I" ) begin gpio_quirk <= 1; solar_quirk <= 1;                           end // Boktai 1
-			if(cart_id[31:8] == "U32" ) begin gpio_quirk <= 1; solar_quirk <= 1;                           end // Boktai 2
-			if(cart_id[31:8] == "U33" ) begin gpio_quirk <= 1; solar_quirk <= 1;                           end // Boktai 3
+			if(cart_id[31:8] == "U32" ) begin gpio_quirk <= 1; solar_quirk <= 1; solar10_quirk <= 1;      end // Boktai 2
+			if(cart_id[31:8] == "U33" ) begin gpio_quirk <= 1; solar_quirk <= 1; solar10_quirk <= 1;      end // Boktai 3
 			if(cart_id       == "FBME") begin sram_quirk <= 1; memory_remap_quirk <= 1;                    end // Classic NES Series Bomberman
 			if(cart_id       == "FADE") begin sram_quirk <= 1; memory_remap_quirk <= 1;                    end // Classic NES Series Castlevania
 			if(cart_id       == "FDKE") begin sram_quirk <= 1; memory_remap_quirk <= 1;                    end // Classic NES Series Donkey Kong
